@@ -26,6 +26,44 @@ _BENCHMARK_PROMPT = (
 _BENCHMARK_MAX_TOKENS = 512
 
 
+def _resolve_model_name(model: str, client) -> str:
+    """Resolve a partial model name against the server's model list.
+
+    If the exact model name exists on the server, return it as-is.
+    Otherwise, try fuzzy matching: if the user passes 'qwen3.5-9b' and
+    the server has 'qwen/qwen3.5-9b', use that.
+    Returns the resolved name, or the original if no match found.
+    """
+    try:
+        models_response = client.models.list()
+        available = [m.id for m in models_response.data]
+
+        # Exact match
+        if model in available:
+            return model
+
+        # Partial match: user's name is a suffix of a server model
+        # e.g. "qwen3.5-9b" matches "qwen/qwen3.5-9b"
+        suffix_matches = [m for m in available if m.endswith("/" + model)]
+        if len(suffix_matches) == 1:
+            return suffix_matches[0]
+        if len(suffix_matches) > 1:
+            # Multiple suffix matches — return the shortest (most specific)
+            return sorted(suffix_matches, key=len)[0]
+
+        # Substring match: user's name appears anywhere in server model
+        substring_matches = [m for m in available if model in m]
+        if len(substring_matches) == 1:
+            return substring_matches[0]
+        if len(substring_matches) > 1:
+            return sorted(substring_matches, key=len)[0]
+
+    except Exception:
+        pass  # If we can't list models, just try the name as-is
+
+    return model
+
+
 def run_benchmark(
     hermes_home: Path,
     model: str,
@@ -45,6 +83,12 @@ def run_benchmark(
         return {"error": "openai package required for benchmarking. Run: pip install openai"}
 
     client = OpenAI(base_url=base_url, api_key=api_key)
+
+    # Resolve partial model names against server's model list
+    resolved_model = _resolve_model_name(model, client)
+    if resolved_model != model:
+        logger.info("Resolved model name: %s → %s", model, resolved_model)
+    model = resolved_model
     test_prompt = prompt or _BENCHMARK_PROMPT
 
     # Warmup run (first inference is often slower due to model loading/caching)
