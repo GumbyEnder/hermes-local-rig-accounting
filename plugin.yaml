@@ -1,0 +1,13 @@
+name: local-rig-accounting
+version: 0.1.0
+description: "Transparent per-token cost accounting for local LLM inference — depreciation, energy, throughput-based pricing displayed alongside cloud provider costs."
+author: GumbyEnder
+kind: standalone
+provides_tools:
+  - rig_cost
+  - rig_summary
+  - rig_benchmark
+provides_hooks:
+  - post_api_request
+  - on_session_finalize
+  - on_session_start
