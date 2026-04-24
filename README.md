@@ -46,12 +46,27 @@ local_rig:
 
 # Check current session cost
 /rig-cost
+
+# Submit your benchmark to the community leaderboard
+/rig-submit qwen3.5-9b
 ```
 
 Or use the LLM tools directly:
 - `rig_cost` — Estimate cost for a model + token count
 - `rig_summary` — Full rig economics dashboard  
 - `rig_benchmark` — Benchmark a local model's TPS
+- `rig_submit` — Submit benchmark to community leaderboard
+
+## In Action
+
+### `/rig-benchmark` — Measure throughput
+![rig-benchmark](rig-benchmark.png)
+
+### `/rig-summary` — See your rig economics
+![rig-summary](rig-summary.png)
+
+### `/rig-submit` — Share with the community
+![rig-submit](rig-submit.png)
 
 ## Cost Model
 
