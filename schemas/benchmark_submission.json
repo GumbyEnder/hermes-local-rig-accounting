@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LocalRigBenchmarkSubmission",
+  "description": "Anonymous benchmark submission for the Local Rig Accounting community leaderboard",
+  "type": "object",
+  "required": ["hardware", "benchmark", "cost_model"],
+  "properties": {
+    "hardware": {
+      "type": "object",
+      "required": ["cpu", "gpu", "ram_gb"],
+      "properties": {
+        "cpu": {
+          "type": "object",
+          "required": ["model", "cores", "threads"],
+          "properties": {
+            "model": {"type": "string", "description": "CPU model name"},
+            "cores": {"type": "integer", "description": "Physical cores"},
+            "threads": {"type": "integer", "description": "Logical threads"},
+            "architecture": {"type": "string", "description": "x86_64, arm64, etc."}
+          }
+        },
+        "gpu": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["model", "vram_mb"],
+            "properties": {
+              "model": {"type": "string", "description": "GPU model name"},
+              "vram_mb": {"type": "integer", "description": "VRAM in MB"},
+              "driver": {"type": "string", "description": "Driver version"}
+            }
+          }
+        },
+        "ram_gb": {"type": "number", "description": "Total system RAM in GB"},
+        "os": {"type": "string", "description": "Operating system"}
+      }
+    },
+    "benchmark": {
+      "type": "object",
+      "required": ["model", "avg_tps", "max_tokens"],
+      "properties": {
+        "model": {"type": "string", "description": "Model name (e.g. qwen/qwen3.5-9b)"},
+        "quantization": {"type": "string", "description": "Quantization (e.g. Q4_K_M, FP16, GGUF)"},
+        "avg_tps": {"type": "number", "description": "Average output tokens per second"},
+        "total_tps": {"type": "number", "description": "Total (input+output) tokens per second"},
+        "output_tokens": {"type": "integer"},
+        "input_tokens": {"type": "integer"},
+        "max_tokens": {"type": "integer", "description": "Benchmark generation limit"},
+        "elapsed_seconds": {"type": "number"},
+        "backend": {"type": "string", "description": "Inference backend (e.g. lm-studio, ollama, llama.cpp, vllm)"},
+        "environment": {"type": "string", "enum": ["local", "remote"]}
+      }
+    },
+    "cost_model": {
+      "type": "object",
+      "required": ["cost_per_million_tokens"],
+      "properties": {
+        "hardware_cost_usd": {"type": "number", "description": "Total rig cost"},
+        "gpu_cost_usd": {"type": "number", "description": "GPU-only cost"},
+        "lifespan_years": {"type": "number"},
+        "avg_power_watts": {"type": "number"},
+        "electricity_rate_per_kwh": {"type": "number"},
+        "depreciation_per_hour": {"type": "number"},
+        "energy_per_hour": {"type": "number"},
+        "total_hourly_cost": {"type": "number"},
+        "cost_per_million_tokens": {"type": "number", "description": "Effective $/M tokens"}
+      }
+    },
+    "submitted_at": {"type": "string", "format": "date-time"},
+    "submission_version": {"type": "string", "const": "1.0"}
+  }
+}

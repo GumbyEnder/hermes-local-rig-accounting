@@ -7,9 +7,11 @@ for a given model, then caches the result.
 from __future__ import annotations
 
 import logging
+import platform
+import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .cost_calculator import _load_benchmarks, _save_benchmarks
 
@@ -62,6 +64,177 @@ def _resolve_model_name(model: str, client) -> str:
         pass  # If we can't list models, just try the name as-is
 
     return model
+
+
+def _is_local_base_url(base_url: str) -> bool:
+    """Determine if a base_url points to a local or private network address.
+
+    Returns True for localhost (127.0.0.1, ::1, 0.0.0.0) or private IP ranges
+    (10.x, 172.16-31.x, 192.168.x). Returns False otherwise.
+    """
+    import re
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(base_url)
+        host = parsed.hostname or ""
+    except Exception:
+        host = base_url.split("://")[-1].split("/")[0].split(":")[0]
+
+    # Localhost variants
+    if host in ("localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"):
+        return True
+
+    # IPv4 private ranges
+    if re.match(r"^10\.", host):
+        return True
+    if re.match(r"^172\.(1[6-9]|2[0-9]|3[01])\.", host):
+        return True
+    if re.match(r"^192\.168\.", host):
+        return True
+
+    # IPv6 link-local (optional, covers local IPv6 like fd00::/8)
+    if re.match(r"^fe80::", host):
+        return True
+
+    return False
+
+
+def _collect_hardware_info() -> Dict[str, Any]:
+    """Collect hardware and OS information from the local system.
+
+    Returns a dict with cpu (model, cores, threads, architecture),
+    gpu (list of {model, vram_mb, driver}), ram_gb, and os fields.
+    All failures are caught and result in empty/missing fields.
+    """
+    result: Dict[str, Any] = {}
+
+    # CPU info via lscpu
+    try:
+        cpu_data = subprocess.run(
+            ["lscpu"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if cpu_data.returncode == 0:
+            cpu_info: Dict[str, Any] = {}
+            for line in cpu_data.stdout.splitlines():
+                if ":" in line:
+                    key, _, val = line.partition(":")
+                    key = key.strip().lower()
+                    val = val.strip()
+                    if "model name" in key:
+                        cpu_info["model"] = val
+                    elif "socket(s)" in key:
+                        cpu_info["sockets"] = int(val) if val.isdigit() else None
+                    elif "core(s) per socket" in key:
+                        cpu_info["cores_per_socket"] = (
+                            int(val) if val.isdigit() else None
+                        )
+                    elif "thread(s) per core" in key:
+                        cpu_info["threads_per_core"] = (
+                            int(val) if val.isdigit() else None
+                        )
+                    elif "architecture" in key:
+                        cpu_info["architecture"] = val
+
+            # Derive total cores and threads
+            sockets = cpu_info.get("sockets", 1) or 1
+            cps = cpu_info.get("cores_per_socket", 1) or 1
+            tpc = cpu_info.get("threads_per_core", 1) or 1
+            cpu_info["cores"] = sockets * cps
+            cpu_info["threads"] = sockets * cps * tpc
+
+            # Keep only the fields we want
+            result["cpu"] = {
+                "model": cpu_info.get("model", "Unknown"),
+                "cores": cpu_info.get("cores", 0),
+                "threads": cpu_info.get("threads", 0),
+                "architecture": cpu_info.get("architecture", "Unknown"),
+            }
+    except Exception:
+        result["cpu"] = {"model": "Unknown", "cores": 0, "threads": 0, "architecture": "Unknown"}
+
+    # GPU info — try nvidia-smi first
+    gpu_list: List[Dict[str, Any]] = []
+    try:
+        nvidia = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.total,driver_version",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if nvidia.returncode == 0 and nvidia.stdout.strip():
+            for line in nvidia.stdout.strip().splitlines():
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 2:
+                    model = parts[0]
+                    vram_mb = int(parts[1]) if parts[1].isdigit() else 0
+                    driver = parts[2] if len(parts) > 2 else "Unknown"
+                    gpu_list.append({"model": model, "vram_mb": vram_mb, "driver": driver})
+    except Exception:
+        pass
+
+    # If no NVIDIA GPUs found, try ROCm (AMD)
+    if not gpu_list:
+        try:
+            rocm = subprocess.run(
+                ["rocm-smi", "--showproductname"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if rocm.returncode == 0:
+                for line in rocm.stdout.splitlines():
+                    if line.strip() and not line.startswith("="):
+                        parts = line.split(":", 1)
+                        if len(parts) == 2:
+                            gpu_list.append(
+                                {"model": parts[1].strip(), "vram_mb": 0, "driver": "ROCm"}
+                            )
+        except Exception:
+            pass
+
+    result["gpu"] = gpu_list
+
+    # RAM — read /proc/meminfo
+    try:
+        with open("/proc/meminfo", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[1].isdigit():
+                        # MemTotal is in kB
+                        ram_kb = int(parts[1])
+                        result["ram_gb"] = round(ram_kb / 1024 / 1024, 1)
+                        break
+            else:
+                result["ram_gb"] = 0.0
+    except Exception:
+        result["ram_gb"] = 0.0
+
+    # OS info
+    try:
+        with open("/etc/os-release", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("PRETTY_NAME="):
+                    os_name = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    result["os"] = os_name
+                    break
+            else:
+                raise FileNotFoundError
+    except Exception:
+        # Fallback to platform module
+        sys_name = platform.system()
+        release = platform.release()
+        result["os"] = f"{sys_name} {release}".strip()
+
+    return result
 
 
 def run_benchmark(
@@ -130,6 +303,11 @@ def run_benchmark(
     tps = output_tokens / elapsed if output_tokens > 0 else 0.0
     tps_total = total_tokens / elapsed
 
+    # Determine environment and collect hardware info (never fails)
+    is_local = _is_local_base_url(base_url)
+    environment = "local" if is_local else "remote"
+    hardware_info = _collect_hardware_info()
+
     result = {
         "avg_tps": round(tps, 2),
         "total_tps": round(tps_total, 2),
@@ -139,9 +317,16 @@ def run_benchmark(
         "max_tokens": max_tokens,
         "base_url": base_url,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "environment": environment,
+        "hardware": hardware_info,
     }
 
-    # Cache result
+    if environment == "remote":
+        result["notes"] = [
+            "Remote provider benchmark — cost estimates use local rig rates for comparison only"
+        ]
+
+    # Cache result (with all metadata)
     benchmarks = _load_benchmarks(hermes_home)
     # Normalize key: strip provider prefix if present
     key = model.split("/", 1)[1] if "/" in model else model

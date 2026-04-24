@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -34,6 +35,7 @@ from hermes_constants import get_hermes_home
 
 from . import hooks
 from .cost_calculator import estimate_local_cost, estimate_session_cost, rig_summary
+from .rig_config import load_rig_config
 from .benchmark import run_benchmark
 
 logger = logging.getLogger("local_rig_accounting")
@@ -250,6 +252,16 @@ def _slash_rig_benchmark(raw_args: str) -> str:
         f"   Cached as: {result.get('cached_as', model)}",
     ]
 
+    # Show hardware info if collected
+    hw = result.get("hardware", {})
+    if hw and hw.get("cpu", {}).get("model"):
+        gpu_names = ", ".join(g.get("model", "?") for g in hw.get("gpu", []))
+        lines.append(f"   Hardware: {hw['cpu']['model']} | {gpu_names} | {hw.get('ram_gb', 0):.0f}GB RAM")
+
+    env = result.get("environment", "local")
+    if env == "remote":
+        lines.append(f"   ⚠ Remote provider — cost estimates use local rig rates for comparison only")
+
     # Show estimated cost with this benchmark
     cost_result = estimate_local_cost(_hermes_home(), model, tps_override=result.get("avg_tps"))
     if cost_result:
@@ -258,6 +270,221 @@ def _slash_rig_benchmark(raw_args: str) -> str:
         lines.append(f"   Hourly cost: ${cost_result.hourly_cost_usd:.4f}/hr")
 
     return "\n".join(lines)
+
+
+def _build_submission_payload(hermes_home: Path, model: str = "") -> Optional[Dict[str, Any]]:
+    """Build a community benchmark submission payload from cached data.
+
+    Gathers: hardware info, latest benchmark, cost model config.
+    Returns None if no benchmark data available.
+    """
+    from .benchmark import _collect_hardware_info
+
+    # Load cached benchmarks
+    from .cost_calculator import _load_benchmarks as _lb
+    benchmarks = _lb(hermes_home)
+
+    if not benchmarks:
+        return None
+
+    # Pick the model to submit (latest or specified)
+    if model:
+        key = model.split("/", 1)[1] if "/" in model and model not in benchmarks else model
+        bench = benchmarks.get(key) or benchmarks.get(model)
+        if not bench:
+            # Try partial match
+            for k, v in benchmarks.items():
+                if model in k:
+                    bench = v
+                    key = k
+                    break
+    else:
+        # Use the most recent benchmark
+        key = max(benchmarks.keys(), key=lambda k: benchmarks[k].get("timestamp", ""))
+        bench = benchmarks[key]
+
+    if not bench:
+        return None
+
+    # Load rig config for cost model
+    rig_config = load_rig_config(hermes_home)
+    profile = rig_config.active
+
+    # Collect hardware
+    hardware = _collect_hardware_info()
+
+    # Build submission matching our JSON schema
+    tps = float(bench.get("avg_tps", 0))
+    hourly = profile.hourly_cost(rig_config.cumulative_inference_hours)
+    tokens_per_hour = tps * 3600.0
+    cost_per_million = round(hourly / tokens_per_hour * 1_000_000, 6) if tokens_per_hour > 0 else 0.0
+
+    submission = {
+        "hardware": hardware,
+        "benchmark": {
+            "model": bench.get("model", key),
+            "quantization": bench.get("quantization", ""),
+            "avg_tps": tps,
+            "total_tps": float(bench.get("total_tps", 0)),
+            "output_tokens": int(bench.get("output_tokens", 0)),
+            "input_tokens": int(bench.get("input_tokens", 0)),
+            "max_tokens": int(bench.get("max_tokens", 512)),
+            "elapsed_seconds": float(bench.get("elapsed_seconds", 0)),
+            "backend": bench.get("backend", ""),
+            "environment": bench.get("environment", "local"),
+        },
+        "cost_model": {
+            "hardware_cost_usd": profile.hardware_cost_usd,
+            "gpu_cost_usd": profile.gpu_only_cost_usd,
+            "lifespan_years": profile.lifespan_years,
+            "avg_power_watts": profile.avg_power_watts,
+            "electricity_rate_per_kwh": profile.electricity_rate_per_kwh,
+            "depreciation_per_hour": round(profile.depreciation_per_hour(rig_config.cumulative_inference_hours), 4),
+            "energy_per_hour": round(profile.energy_cost_per_hour, 4),
+            "total_hourly_cost": round(hourly, 4),
+            "cost_per_million_tokens": cost_per_million,
+        },
+        "submitted_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "submission_version": "1.0",
+    }
+
+    return submission
+
+
+def _handle_rig_submit(args: dict, **kwargs) -> str:
+    """Submit benchmark results to the community leaderboard."""
+    model = args.get("model", "")
+    dry_run = args.get("dry_run", False)
+
+    submission = _build_submission_payload(_hermes_home(), model=model)
+
+    if submission is None:
+        return _tool_error("No benchmark data available. Run /rig-benchmark first.")
+
+    if dry_run:
+        return _tool_result({
+            "status": "dry_run",
+            "message": "This is what would be submitted. Use dry_run=false to submit.",
+            "payload": submission,
+        })
+
+    # Create GitHub issue via gh CLI
+    try:
+        import subprocess
+        import json as _json
+
+        title = f"📊 Benchmark: {submission['benchmark']['model']} @ {submission['benchmark']['avg_tps']:.1f} TPS on {submission['hardware'].get('gpu', [{}])[0].get('model', 'unknown GPU')}"
+        body = f"""### Benchmark Submission
+
+```json
+{_json.dumps(submission, indent=2)}
+```
+
+---
+
+**Auto-submitted via `/rig-submit`** | [Local Rig Accounting Plugin](https://github.com/GumbyEnder/hermes-local-rig-accounting)
+"""
+
+        result = subprocess.run(
+            ["gh", "issue", "create",
+             "--repo", "GumbyEnder/hermes-local-rig-accounting",
+             "--title", title,
+             "--body", body,
+             "--label", "benchmark"],
+            capture_output=True, text=True, timeout=30,
+        )
+
+        if result.returncode == 0:
+            issue_url = result.stdout.strip()
+            return _tool_result({
+                "status": "submitted",
+                "issue_url": issue_url,
+                "model": submission["benchmark"]["model"],
+                "tps": submission["benchmark"]["avg_tps"],
+                "gpu": submission["hardware"].get("gpu", [{}])[0].get("model", "unknown"),
+            })
+        else:
+            return _tool_error(f"GitHub issue creation failed: {result.stderr.strip()}")
+
+    except FileNotFoundError:
+        return _tool_error("gh CLI not found. Install: https://cli.github.com/")
+    except Exception as e:
+        return _tool_error(f"Submission failed: {e}")
+
+
+def _slash_rig_submit(raw_args: str) -> str:
+    """Submit benchmark results to the community leaderboard."""
+    import json as _json
+
+    parts = raw_args.strip().split()
+    model = parts[0] if parts else ""
+    dry_run = "--dry-run" in parts
+
+    submission = _build_submission_payload(_hermes_home(), model=model)
+
+    if submission is None:
+        return "❌ No benchmark data available. Run /rig-benchmark first."
+
+    # Preview
+    lines = [
+        "📋 Benchmark Submission Preview",
+        "─────────────────────────────────",
+        f"  GPU: {submission['hardware'].get('gpu', [{}])[0].get('model', 'N/A')}",
+        f"  CPU: {submission['hardware'].get('cpu', {}).get('model', 'N/A')}",
+        f"  RAM: {submission['hardware'].get('ram_gb', 0):.0f} GB",
+        f"  Model: {submission['benchmark']['model']}",
+        f"  TPS: {submission['benchmark']['avg_tps']:.2f}",
+        f"  $/M tokens: ${submission['cost_model']['cost_per_million_tokens']:.4f}",
+        "─────────────────────────────────",
+    ]
+
+    if dry_run:
+        lines.append("")
+        lines.append("Full JSON payload:")
+        lines.append(f"```json\n{_json.dumps(submission, indent=2)}\n```")
+        lines.append("")
+        lines.append("(dry-run mode — nothing submitted)")
+        return "\n".join(lines)
+
+    # Actually submit
+    try:
+        import subprocess
+
+        title = f"📊 Benchmark: {submission['benchmark']['model']} @ {submission['benchmark']['avg_tps']:.1f} TPS on {submission['hardware'].get('gpu', [{}])[0].get('model', 'unknown GPU')}"
+        body = f"""### Benchmark Submission
+
+```json
+{_json.dumps(submission, indent=2)}
+```
+
+---
+
+**Auto-submitted via `/rig-submit`** | [Local Rig Accounting Plugin](https://github.com/GumbyEnder/hermes-local-rig-accounting)
+"""
+
+        result = subprocess.run(
+            ["gh", "issue", "create",
+             "--repo", "GumbyEnder/hermes-local-rig-accounting",
+             "--title", title,
+             "--body", body,
+             "--label", "benchmark"],
+            capture_output=True, text=True, timeout=30,
+        )
+
+        if result.returncode == 0:
+            issue_url = result.stdout.strip()
+            lines.append(f"✅ Submitted! {issue_url}")
+            return "\n".join(lines)
+        else:
+            lines.append(f"❌ Submission failed: {result.stderr.strip()}")
+            return "\n".join(lines)
+
+    except FileNotFoundError:
+        lines.append("❌ gh CLI not found. Install from https://cli.github.com/")
+        return "\n".join(lines)
+    except Exception as e:
+        lines.append(f"❌ Submission failed: {e}")
+        return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +582,36 @@ def register(ctx):
         emoji="📊",
     )
 
+    ctx.register_tool(
+        name="rig_submit",
+        toolset="local_rig_accounting",
+        schema={
+            "name": "rig_submit",
+            "description": (
+                "Submit benchmark results to the community leaderboard. "
+                "Creates a GitHub issue on the plugin repo with hardware + benchmark + cost data. "
+                "Only your GitHub username is included — no other personal info."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Model to submit (e.g. 'qwen3.5-9b'). If omitted, submits latest benchmark.",
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "Preview submission without creating issue. Default: false",
+                    },
+                },
+            },
+        },
+        handler=_handle_rig_submit,
+        check_fn=_check_rig_available,
+        description="Submit benchmark to community leaderboard",
+        emoji="🏆",
+    )
+
     # --- Hooks ---
     home = _hermes_home()
 
@@ -389,5 +646,11 @@ def register(ctx):
         description="Run TPS benchmark for a local model",
         args_hint="<model_name> [base_url]",
     )
+    ctx.register_command(
+        name="rig-submit",
+        handler=_slash_rig_submit,
+        description="Submit benchmark to community leaderboard (GitHub issue)",
+        args_hint="[model_name] [--dry-run]",
+    )
 
-    logger.info("Local Rig Accounting plugin registered (tools: rig_cost, rig_summary, rig_benchmark)")
+    logger.info("Local Rig Accounting plugin registered (tools: rig_cost, rig_summary, rig_benchmark, rig_submit)")

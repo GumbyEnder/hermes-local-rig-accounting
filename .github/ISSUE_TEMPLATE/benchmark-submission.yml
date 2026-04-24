@@ -1,0 +1,135 @@
+name: Benchmark Submission
+description: Submit your local rig benchmark results to the community leaderboard
+title: "[Benchmark] "
+labels: ["benchmark", "submission"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 🏆 Local Rig Benchmark Leaderboard Submission
+
+        Submit your benchmark results to the community leaderboard! Submissions are anonymous — only your GitHub username will be visible.
+
+        **Important:** Please ensure your benchmark was run with `/rig-benchmark` or `/rig-submit --dry-run` and paste the full JSON output below.
+
+  - type: input
+    id: gpu_model
+    attributes:
+      label: GPU Model (required)
+      description: Select your GPU model from the dropdown
+      placeholder: "NVIDIA RTX 4080"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: gpu_dropdown
+    attributes:
+      label: GPU Model (required)
+      description: Select your GPU model
+      options:
+        - NVIDIA RTX 4080
+        - NVIDIA RTX 4090
+        - NVIDIA RTX 3090
+        - NVIDIA A100
+        - NVIDIA L40S
+        - AMD RX 7900 XTX
+        - Apple M2 Max
+        - Apple M3 Max
+        - Apple M4 Pro
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: cpu_model
+    attributes:
+      label: CPU Model (required)
+      description: "e.g. AMD Ryzen 9 7950X, Intel i9-14900K"
+      placeholder: "AMD Ryzen 9 7950X"
+    validations:
+      required: true
+
+  - type: input
+    id: ram_gb
+    attributes:
+      label: RAM GB (required)
+      description: Total system RAM in gigabytes
+      placeholder: "64"
+    validations:
+      required: true
+
+  - type: input
+    id: model_benchmarked
+    attributes:
+      label: Model Benchmarked (required)
+      description: "Model name as reported by the benchmark (e.g. qwen/qwen3.5-9b)"
+      placeholder: "qwen/qwen3.5-9b"
+    validations:
+      required: true
+
+  - type: input
+    id: quantization
+    attributes:
+      label: Quantization (optional)
+      description: "e.g. Q4_K_M, Q5_K_M, FP16, GGUF"
+      placeholder: "Q4_K_M"
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend (optional)
+      description: Inference backend used
+      options:
+        - LM Studio
+        - Ollama
+        - llama.cpp
+        - vLLM
+        - Other
+    validations:
+      required: false
+
+  - type: input
+    id: avg_tps
+    attributes:
+      label: Avg TPS (required)
+      description: Average tokens per second (output tokens)
+      placeholder: "125.5"
+    validations:
+      required: true
+
+  - type: textarea
+    id: benchmark_json
+    attributes:
+      label: Benchmark JSON (required)
+      description: Paste the full JSON output from `/rig-benchmark` or `/rig-submit --dry-run`
+      placeholder: |
+        {
+          "hardware": {
+            "cpu": {
+              "model": "AMD Ryzen 9 7950X",
+              "cores": 16,
+              "threads": 32,
+              "architecture": "x86_64"
+            },
+            "gpu": [
+              {
+                "model": "NVIDIA RTX 4080",
+                "vram_mb": 16384,
+                "driver": "550.54.15"
+              }
+            ],
+            "ram_gb": 64,
+            "os": "Linux Mint 22.3"
+          },
+          ...
+        }
+      render: json
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional_notes
+    attributes:
+      label: Additional Notes (optional)
+      description: Any extra context about your setup or benchmark run
+      placeholder: "Cooling: water-cooled CPU, GPU at 75°C average..."
