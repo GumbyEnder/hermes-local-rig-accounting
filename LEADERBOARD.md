@@ -1,80 +1,77 @@
 # 🏆 Local Rig Benchmark Leaderboard
 
-## What is this?
+Real-world cost-per-token benchmarks from the local LLM community. All data self-reported via [GitHub Issues](https://github.com/GumbyEnder/hermes-local-rig-accounting/issues?q=label%3Abenchmark).
 
-The **Local Rig Benchmark Leaderboard** tracks the cost-effectiveness of running large language models on local hardware. It shows which hardware + model combinations deliver the lowest cost per million tokens, helping the community make informed decisions about local AI infrastructure investments.
-
-All metrics are self-reported by community members via GitHub Issues. The leaderboard is updated automatically via CI/CD that processes new submissions.
+> **Why this matters:** Local inference isn't free — every token costs electricity and hardware depreciation. This leaderboard shows the *real* effective cost per million tokens so you can compare local vs. cloud and make informed hardware decisions.
 
 ---
 
 ## Leaderboard
 
-| GPU | CPU | RAM | Model | Quant | TPS | $/M tokens | Backend | Submitted |
-|-----|-----|-----|-------|-------|-----|-----------|---------|-----------|
-| **NVIDIA RTX 4080** | AMD Ryzen 9 7950X | 64GB | qwen/qwen3.5-9b | Q4_K_M | 127.4 | $0.38 | llama.cpp | Apr 2026 |
-| **NVIDIA RTX 4090** | Intel i9-14900K | 128GB | llama-3-70b | Q5_K_M | 89.2 | $0.52 | vLLM | Apr 2026 |
-| **Apple M3 Max** | Apple M3 Max (12-core) | 64GB | mistral-7b | FP16 | 94.1 | $0.44 | Ollama | Mar 2026 |
-| **NVIDIA L40S** | AMD EPYC 7742 | 256GB | mixtral-8x7b | Q4_K_M | 65.8 | $0.67 | llama.cpp | Mar 2026 |
+*Sorted by cost per million tokens (lowest first). Last rebuilt: April 2026.*
 
-> **Legend:** TPS = tokens per second (output). $/M tokens = effective cost per million generated tokens (depreciation + electricity). Lower is better for cost; higher is better for TPS.
+| # | GPU | CPU | RAM | Model | TPS | $/M tokens | Submitted |
+|---|-----|-----|-----|-------|-----|-----------|-----------|
+| 1 | NVIDIA RTX 4080 16GB | Intel i9-13900KF (24c/48t) | 31 GB | qwen3.5-9b | 76.0 | $0.41 | Apr 2026 |
+
+> **Your rig not here?** Run `/rig-benchmark <model>` then `/rig-submit <model>` in Hermes, or [open a benchmark issue](https://github.com/GumbyEnder/hermes-local-rig-accounting/issues/new?template=benchmark-submission.yml) manually.
+
+---
+
+## What the Numbers Mean
+
+| Metric | Definition |
+|--------|-----------|
+| **TPS** | Tokens per second (output generation speed), measured by the plugin's standardized benchmark |
+| **$/M tokens** | Effective cost per million generated tokens, calculated as: `(depreciation/hr + energy/hr) / TPS × 1,000,000 / 3600` |
+| **Depreciation** | Based on GPU-only cost over expected lifespan, only counting actual inference hours |
+| **Energy** | `avg_power_watts / 1000 × electricity_rate_per_kWh` |
+
+### Example Breakdown (RTX 4080 entry)
+
+| Component | Value |
+|-----------|-------|
+| GPU cost | $1,500 |
+| Lifespan | 3 years (26,298 inference hours) |
+| Power draw | 450W |
+| Electricity | $0.12/kWh |
+| Depreciation | $0.057/hr |
+| Energy | $0.054/hr |
+| **Total hourly** | **$0.111/hr** |
+| At 76 TPS | **$0.41/M tokens** |
+
+For comparison: GPT-4o-mini runs ~$0.15/M input, $0.60/M output on OpenAI. A well-tuned local rig can be cost-competitive — *if you measure it.*
 
 ---
 
 ## How to Submit
 
-Submitting your benchmark to the leaderboard is simple and anonymous:
+### Option A: In-App (Recommended)
 
-1. **Run the benchmark** on your local rig:
-   ```bash
-   /rig-benchmark --model qwen/qwen3.5-9b --max-tokens 4096
-   ```
+```bash
+# Benchmark your model
+/rig-benchmark qwen3.5-9b
 
-2. **Copy the JSON output** from the command (or use `/rig-submit --dry-run` if available).
-
-3. **Open a GitHub Issue** in this repository using the [Benchmark Submission template](.github/ISSUE_TEMPLATE/benchmark-submission.yml):
-   - Go to the [Issues tab](https://github.com/GumbyEnder/hermes-local-rig-accounting/issues)
-   - Click "New Issue"
-   - Select "Benchmark Submission"
-   - Fill in the form fields (GPU, CPU, RAM, Model, etc.)
-   - **Paste the full JSON output** into the "Benchmark JSON" textarea
-   - Submit
-
-4. **Wait for automation** — The CI pipeline will validate your submission, compute the cost model, and update this leaderboard automatically.
-
----
-
-## Submission Rules & Notes
-
-- **Anonymous submissions**: Only your GitHub username will be visible alongside your entry. No personal information is published.
-- **One submission per hardware+model combo**: If you've already submitted for RTX 4080 + Qwen3.5-9B, only submit again if you've significantly changed the setup (new quant, different backend, etc.).
-- **Honest reporting**: The leaderboard relies on community integrity. Fake or misleading submissions will be removed if discovered.
-- **Minimum benchmark size**: For statistical reliability, benchmarks should run for at least 30 seconds and generate a minimum of 1024 tokens.
-- **Real hardware only**: Cloud instances (rented GPUs) are welcome, but please specify "remote" in the environment field and include the actual instance type (e.g., "Lambda Labs A100 80GB").
-
----
-
-## Cost Model Calculation
-
-The effective cost per million tokens is calculated as:
-
-```
-cost_per_token = (depreciation_per_hour + energy_per_hour) / avg_tps
-cost_per_million = cost_per_token * 1_000_000
+# Submit to the leaderboard
+/rig-submit qwen3.5-9b
 ```
 
-Where:
-- **depreciation_per_hour** = (hardware_cost + gpu_cost) / (lifespan_years × 365 × 24)
-- **energy_per_hour** = avg_power_watts × electricity_rate_per_kwh × 0.001
+### Option B: Manual
 
-This reflects the true marginal cost of running inference on your rig, accounting for both capital depreciation and electricity.
-
----
-
-## Questions?
-
-Open a [discussion](https://github.com/GumbyEnder/hermes-local-rig-accounting/discussions) or contact the maintainers if you have questions about the benchmark process, cost model, or leaderboard updates.
+1. Go to [Issues → New Issue → Benchmark Submission](https://github.com/GumbyEnder/hermes-local-rig-accounting/issues/new?template=benchmark-submission.yml)
+2. Fill in GPU, CPU, RAM, model, TPS, and your cost model parameters
+3. Submit — the leaderboard auto-updates nightly
 
 ---
 
-*Last updated: April 2026*
+## Submission Rules
+
+- **One entry per hardware+model combo** — resubmit only if setup changed significantly
+- **Honest numbers** — use the plugin's built-in benchmark, not hand-timed estimates
+- **Minimum 1,024 output tokens** per benchmark for statistical reliability
+- **Local or remote hardware** — remote (cloud GPU) entries welcome, just tag `environment: remote`
+- **GitHub account required** — your username is the only identity published, no PII collected
+
+---
+
+*This leaderboard is auto-regenerated from GitHub Issues by [a CI workflow](.github/workflows/update-leaderboard.yml). Your submissions appear within 24 hours.*

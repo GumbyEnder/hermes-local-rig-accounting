@@ -4,6 +4,7 @@ Local Rig Configuration Loader
 Reads rig profile from config.yaml under the `local_rig:` key.
 Falls back to sensible defaults if no config is provided.
 Supports multiple named rig profiles.
+Supports auto-lookup of electricity rates by region.
 """
 from __future__ import annotations
 
@@ -14,6 +15,67 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("local_rig_accounting")
+
+# ---------------------------------------------------------------------------
+# Electricity rate auto-lookup
+# ---------------------------------------------------------------------------
+_POWER_RATES_FILE = Path(__file__).parent / "power_rates.yaml"
+
+
+def lookup_electricity_rate(region: str) -> Optional[float]:
+    """Look up electricity rate (USD/kWh) from power_rates.yaml.
+
+    Searches US states first, then international, then national averages.
+    Case-insensitive matching. Returns None if region not found.
+    """
+    if not _POWER_RATES_FILE.exists():
+        logger.debug("power_rates.yaml not found at %s", _POWER_RATES_FILE)
+        return None
+    try:
+        import yaml
+        data = yaml.safe_load(_POWER_RATES_FILE.read_text()) or {}
+    except Exception as e:
+        logger.warning("Failed to parse power_rates.yaml: %s", e)
+        return None
+
+    region_lower = region.strip().lower()
+
+    # Check US states
+    us_states = data.get("us_states", {})
+    for name, rate in us_states.items():
+        if name.lower() == region_lower:
+            logger.info("Matched electricity rate for %s: $%.4f/kWh", name, rate)
+            return float(rate)
+
+    # Check international
+    intl = data.get("international", {})
+    for name, rate in intl.items():
+        if name.lower() == region_lower:
+            logger.info("Matched electricity rate for %s: $%.4f/kWh", name, rate)
+            return float(rate)
+
+    # Check if they used a common abbreviation
+    abbreviations = {
+        "ca": "California", "tx": "Texas", "fl": "Florida", "ny": "New York",
+        "wa": "Washington", "or": "Oregon", "co": "Colorado", "il": "Illinois",
+        "pa": "Pennsylvania", "oh": "Ohio", "ga": "Georgia", "nc": "North Carolina",
+        "mi": "Michigan", "nj": "New Jersey", "va": "Virginia", "az": "Arizona",
+        "ma": "Massachusetts", "md": "Maryland", "mn": "Minnesota", "wi": "Wisconsin",
+        "uk": "United Kingdom", "us": None, "usa": None,
+    }
+    if region_lower in abbreviations:
+        expanded = abbreviations[region_lower]
+        if expanded is None:
+            # National average
+            avg = data.get("us_national_average")
+            if avg:
+                logger.info("Matched US national average: $%.4f/kWh", avg)
+                return float(avg)
+        elif expanded:
+            return lookup_electricity_rate(expanded)
+
+    logger.info("No electricity rate found for region '%s'", region)
+    return None
 
 # ---------------------------------------------------------------------------
 # Default rig profile (no config = zero-cost, opt-in model)
@@ -125,6 +187,19 @@ def save_cumulative_hours(hermes_home: Path, hours: float) -> None:
 # Config loading from config.yaml
 # ---------------------------------------------------------------------------
 def _dict_to_profile(d: Dict[str, Any], label: str = "default") -> RigProfile:
+    # Resolve electricity rate: explicit number > "auto" + region lookup > fallback
+    rate_raw = d.get("electricity_rate_per_kwh", 0.0)
+    if isinstance(rate_raw, str) and rate_raw.strip().lower() == "auto":
+        region = d.get("electricity_region", "")
+        resolved = lookup_electricity_rate(region) if region else None
+        rate = resolved if resolved is not None else 0.0
+        if resolved is not None:
+            logger.info("Auto-resolved electricity rate for '%s': $%.4f/kWh", region, rate)
+        else:
+            logger.warning("electricity_rate_per_kwh=auto but no match for region '%s'; defaulting to 0.0", region)
+    else:
+        rate = float(rate_raw) if rate_raw is not None else 0.0
+
     return RigProfile(
         label=label,
         hardware_cost_usd=float(d.get("hardware_cost_usd", 0.0)),
@@ -134,7 +209,7 @@ def _dict_to_profile(d: Dict[str, Any], label: str = "default") -> RigProfile:
             else None
         ),
         avg_power_watts=float(d.get("avg_power_watts", 0.0)),
-        electricity_rate_per_kwh=float(d.get("electricity_rate_per_kwh", 0.0)),
+        electricity_rate_per_kwh=rate,
         hostname=d.get("hostname"),
     )
 

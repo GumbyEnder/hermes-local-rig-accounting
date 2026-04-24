@@ -33,6 +33,13 @@ local_rig:
   electricity_rate_per_kwh: 0.15 # Your local electricity rate ($/kWh)
 ```
 
+**Don't know your electricity rate?** Use auto-lookup:
+```yaml
+local_rig:
+  electricity_rate_per_kwh: auto   # Auto-lookup from built-in database
+  electricity_region: Texas        # US state, country, or abbreviation
+```
+
 **Privacy note:** All cost data stays local on your machine. No external calls, no telemetry.
 
 ## Usage
@@ -47,6 +54,9 @@ local_rig:
 # Check current session cost
 /rig-cost
 
+# Look up electricity rates by region
+/rig-rates Texas
+
 # Submit your benchmark to the community leaderboard
 /rig-submit qwen3.5-9b
 ```
@@ -55,6 +65,7 @@ Or use the LLM tools directly:
 - `rig_cost` — Estimate cost for a model + token count
 - `rig_summary` — Full rig economics dashboard  
 - `rig_benchmark` — Benchmark a local model's TPS
+- `rig_rates` — Look up regional electricity rates
 - `rig_submit` — Submit benchmark to community leaderboard
 
 ## In Action

@@ -35,7 +35,7 @@ from hermes_constants import get_hermes_home
 
 from . import hooks
 from .cost_calculator import estimate_local_cost, estimate_session_cost, rig_summary
-from .rig_config import load_rig_config
+from .rig_config import load_rig_config, lookup_electricity_rate
 from .benchmark import run_benchmark
 
 logger = logging.getLogger("local_rig_accounting")
@@ -487,6 +487,76 @@ def _slash_rig_submit(raw_args: str) -> str:
         return "\n".join(lines)
 
 
+def _handle_rig_rates(args: dict, **kwargs) -> str:
+    """Look up regional electricity rates."""
+    region = args.get("region", "").strip()
+    if not region:
+        # Show a summary of popular regions
+        try:
+            import yaml
+            from .rig_config import _POWER_RATES_FILE
+            if _POWER_RATES_FILE.exists():
+                data = yaml.safe_load(_POWER_RATES_FILE.read_text()) or {}
+                lines = ["⚡ **Regional Electricity Rates (USD/kWh)**", ""]
+                lines.append(f"US National Average: ${data.get('us_national_average', 0):.4f}/kWh")
+                lines.append("")
+                lines.append("**Most Expensive States:**")
+                states = data.get("us_states", {})
+                by_rate = sorted(states.items(), key=lambda x: x[1], reverse=True)
+                for name, rate in by_rate[:5]:
+                    lines.append(f"  {name}: ${rate:.4f}/kWh")
+                lines.append("")
+                lines.append("**Cheapest States:**")
+                for name, rate in by_rate[-5:]:
+                    lines.append(f"  {name}: ${rate:.4f}/kWh")
+                lines.append("")
+                lines.append("**International:**")
+                intl = data.get("international", {})
+                for name, rate in sorted(intl.items(), key=lambda x: x[1], reverse=True)[:8]:
+                    lines.append(f"  {name}: ${rate:.2f}/kWh")
+                lines.append("")
+                lines.append("Use `rig_rates` with a `region` param to look up a specific rate.")
+                lines.append("Config: `electricity_rate_per_kwh: auto` + `electricity_region: Texas`")
+                return "\n".join(lines)
+        except Exception:
+            pass
+        return "No region specified and rate data unavailable."
+
+    rate = lookup_electricity_rate(region)
+    if rate is not None:
+        # Calculate impact on cost for a typical rig
+        sample_watts = 450
+        sample_energy_hr = (sample_watts / 1000) * rate
+        return "\n".join([
+            f"⚡ **Electricity Rate for {region}**",
+            f"",
+            f"Rate: **${rate:.4f}/kWh** ({rate*100:.2f}¢/kWh)",
+            f"",
+            f"Impact on a 450W rig:",
+            f"  Energy cost: ${sample_energy_hr:.3f}/hr",
+            f"  At 50 TPS: ${sample_energy_hr / 50 * 1_000_000 / 3600:.2f}/M tokens (energy only)",
+            f"",
+            f"To use in config.yaml:",
+            f"  electricity_rate_per_kwh: auto",
+            f"  electricity_region: {region}",
+        ])
+    else:
+        return "\n".join([
+            f"❌ No rate found for '{region}'",
+            f"",
+            f"Try: a US state name (e.g. 'Texas', 'California'),",
+            f"     a country name (e.g. 'Germany', 'Japan'),",
+            f"     or a state abbreviation (e.g. 'TX', 'CA').",
+            f"Run `rig_rates` without args to see all available regions.",
+        ])
+
+
+def _slash_rig_rates(args: str = "") -> str:
+    """Slash command: /rig-rates [region]"""
+    region = args.strip()
+    return _handle_rig_rates({"region": region})
+
+
 # ---------------------------------------------------------------------------
 # Plugin Registration
 # ---------------------------------------------------------------------------
@@ -612,6 +682,33 @@ def register(ctx):
         emoji="🏆",
     )
 
+    ctx.register_tool(
+        name="rig_rates",
+        toolset="local_rig_accounting",
+        schema={
+            "name": "rig_rates",
+            "description": (
+                "Look up regional electricity rates (USD/kWh). "
+                "Pass a region name (US state, country, abbreviation) to get the rate, "
+                "or omit to see a summary of available regions. "
+                "Supports auto-config: electricity_rate_per_kwh: auto + electricity_region: Texas"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "region": {
+                        "type": "string",
+                        "description": "Region to look up (e.g. 'Texas', 'CA', 'Germany'). Omit for summary.",
+                    },
+                },
+            },
+        },
+        handler=_handle_rig_rates,
+        check_fn=_check_rig_available,
+        description="Look up regional electricity rates",
+        emoji="⚡",
+    )
+
     # --- Hooks ---
     home = _hermes_home()
 
@@ -653,4 +750,11 @@ def register(ctx):
         args_hint="[model_name] [--dry-run]",
     )
 
-    logger.info("Local Rig Accounting plugin registered (tools: rig_cost, rig_summary, rig_benchmark, rig_submit)")
+    ctx.register_command(
+        name="rig-rates",
+        handler=_slash_rig_rates,
+        description="Look up regional electricity rates",
+        args_hint="[region_name]",
+    )
+
+    logger.info("Local Rig Accounting plugin registered (tools: rig_cost, rig_summary, rig_benchmark, rig_submit, rig_rates)")

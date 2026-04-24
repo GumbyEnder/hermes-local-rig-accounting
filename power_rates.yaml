@@ -1,0 +1,107 @@
+# Regional Electricity Rates
+# Sources: EIA Table 5.6.A (January 2026), Eurostat, Global Petrol Prices
+# Rate unit: USD per kWh (residential)
+# Last updated: April 2026
+
+us_states:
+  # New England (avg ~29.36¢)
+  Massachusetts: 0.3116
+  Maine: 0.3073
+  Rhode Island: 0.3014
+  Connecticut: 0.2830
+  New Hampshire: 0.2632
+  Vermont: 0.2329
+
+  # Middle Atlantic (avg ~23.68¢)
+  New York: 0.2837
+  New Jersey: 0.2313
+  Pennsylvania: 0.2019
+
+  # South Atlantic (avg ~15.64¢)
+  "District of Columbia": 0.2372
+  Maryland: 0.2061
+  Delaware: 0.1651
+  Florida: 0.1592
+  Virginia: 0.1587
+  "South Carolina": 0.1541
+  "West Virginia": 0.1477
+  Georgia: 0.1446
+  "North Carolina": 0.1368
+
+  # East North Central (avg ~17.45¢)
+  Michigan: 0.1952
+  Wisconsin: 0.1820
+  Ohio: 0.1759
+  Illinois: 0.1636
+  Indiana: 0.1619
+
+  # East South Central (avg ~14.34¢)
+  Alabama: 0.1606
+  Kentucky: 0.1427
+  Mississippi: 0.1424
+  Tennessee: 0.1310
+
+  # West South Central (avg ~14.64¢)
+  Texas: 0.1569
+  Oklahoma: 0.1262
+  Louisiana: 0.1246
+  Arkansas: 0.1235
+
+  # Mountain (avg ~14.50¢)
+  Colorado: 0.1644
+  Arizona: 0.1561
+  "New Mexico": 0.1470
+  Nevada: 0.1398
+  Montana: 0.1286
+  Utah: 0.1288
+  Wyoming: 0.1285
+  Idaho: 0.1207
+
+  # West North Central (avg ~12.92¢)
+  Minnesota: 0.1498
+  Kansas: 0.1429
+  "South Dakota": 0.1360
+  Iowa: 0.1283
+  Missouri: 0.1180
+  Nebraska: 0.1176
+  "North Dakota": 0.1092
+
+  # Pacific Contiguous (avg ~23.27¢)
+  California: 0.3029
+  Oregon: 0.1466
+  Washington: 0.1381
+
+  # Pacific Noncontiguous
+  Hawaii: 0.3979
+  Alaska: 0.2552
+
+us_national_average: 0.1745
+
+international:
+  # Selected countries — residential avg USD/kWh
+  # Sources: Global Petrol Prices, Eurostat 2025/2026
+  Germany: 0.41
+  Denmark: 0.38
+  Belgium: 0.35
+  "United Kingdom": 0.33
+  Ireland: 0.32
+  Spain: 0.28
+  Italy: 0.27
+  Australia: 0.25
+  France: 0.21
+  Netherlands: 0.20
+  Japan: 0.25
+  "South Korea": 0.13
+  Canada: 0.12
+  Brazil: 0.14
+  Mexico: 0.10
+  India: 0.08
+  China: 0.08
+
+# Usage in config.yaml:
+#   local_rig:
+#     electricity_rate_per_kwh: auto   # auto-lookup from this file
+#     electricity_region: Texas        # state name or country name
+#
+# If electricity_rate_per_kwh is a number, that takes priority.
+# If set to "auto", the plugin looks up the region in this file.
