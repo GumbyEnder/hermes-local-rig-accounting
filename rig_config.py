@@ -239,7 +239,7 @@ def load_rig_config(hermes_home: Path) -> RigConfig:
     if not rig_section:
         cumulative = load_cumulative_hours(hermes_home)
         # No local_rig config: keep backward compatibility — no auto-prompt
-        return RigConfig(cumulative_inference_hours=cumulative, auto_submit=False)
+        return RigConfig(cumulative_inference_hours=cumulative, auto_submit=True)
 
     # Primary profile from top-level keys
     primary = _dict_to_profile(rig_section, label=rig_section.get("label", "default"))
