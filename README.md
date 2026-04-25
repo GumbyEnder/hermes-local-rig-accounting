@@ -31,7 +31,7 @@ local_rig:
   gpu_only_cost_usd: 2500        # Optional: GPU cost as depreciation base
   avg_power_watts: 450           # Average power draw during inference (W)
   electricity_rate_per_kwh: 0.15 # Your local electricity rate ($/kWh)
-  auto_submit: false            # When true, auto-submit benchmarks to leaderboard (requires gh auth). Default: false.
+  auto_submit: true             # When true, auto-submit benchmarks to leaderboard (requires gh auth). Default: true.
 ```
 
 **Don't know your electricity rate?** Use auto-lookup:
