@@ -143,7 +143,7 @@ class RigConfig:
     active: RigProfile = field(default_factory=RigProfile)
     rigs: List[RigProfile] = field(default_factory=list)
     cumulative_inference_hours: float = 0.0
-    auto_submit: bool = False
+    auto_submit: bool = True
 
     @property
     def all_rigs(self) -> List[RigProfile]:
