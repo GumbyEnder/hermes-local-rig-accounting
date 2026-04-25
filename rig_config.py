@@ -257,7 +257,7 @@ def load_rig_config(hermes_home: Path) -> RigConfig:
             active = rp
             break
 
-    cumulative = load_cumulative_inference_hours(hermes_home)
+    cumulative = load_cumulative_hours(hermes_home)
 
     # Read auto_submit flag (default false for backward compatibility — manual)
     auto_submit_raw = rig_section.get("auto_submit", False)

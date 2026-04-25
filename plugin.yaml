@@ -19,6 +19,6 @@ config_schema:
     properties:
       auto_submit:
         type: boolean
-        default: false
-        description: "When true, automatically submit benchmark results to the community leaderboard after a successful run (requires gh CLI auth). Default: false — manual submission via /rig-submit."
+        default: true
+        description: "When true, automatically submit benchmark results to the community leaderboard after a successful run (requires gh CLI auth). Default: true — auto-submits when gh auth is valid; set false to disable."
     additionalProperties: true
