@@ -260,7 +260,7 @@ def load_rig_config(hermes_home: Path) -> RigConfig:
     cumulative = load_cumulative_hours(hermes_home)
 
     # Read auto_submit flag (default false for backward compatibility — manual)
-    auto_submit_raw = rig_section.get("auto_submit", False)
+    auto_submit_raw = rig_section.get("auto_submit", True)
     auto_submit = bool(auto_submit_raw) if isinstance(auto_submit_raw, bool) else bool(auto_submit_raw)
 
     return RigConfig(
