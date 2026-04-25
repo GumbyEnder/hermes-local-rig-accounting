@@ -13,6 +13,7 @@ Real-world cost-per-token benchmarks from the local LLM community. All data self
 | # | GPU | CPU | RAM | Model | TPS | $/M tokens | Submitted |
 |---|-----|-----|-----|-------|-----|-----------|-----------|
 | 1 | NVIDIA GeForce RTX 4080 15GB | 13th Gen Intel(R) Core(TM) i9-13900KF | 31 GB | qwen3.5-9b | 76.0 | $0.41 | Apr 2026 |
+| 2 | NVIDIA GeForce RTX 4080 15GB | 13th Gen Intel(R) Core(TM) i9-13900KF | 31 GB | qwen3.5-9b | 57.8 | $0.53 | Apr 2026 |
 
 > **Your rig not here?** Run `/rig-benchmark <model>` then `/rig-submit <model>` in Hermes, or [open a benchmark issue](https://github.com/GumbyEnder/hermes-local-rig-accounting/issues/new?template=benchmark-submission.yml) manually.
 
