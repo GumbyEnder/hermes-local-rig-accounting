@@ -143,6 +143,7 @@ class RigConfig:
     active: RigProfile = field(default_factory=RigProfile)
     rigs: List[RigProfile] = field(default_factory=list)
     cumulative_inference_hours: float = 0.0
+    auto_submit: bool = False
 
     @property
     def all_rigs(self) -> List[RigProfile]:
@@ -237,7 +238,8 @@ def load_rig_config(hermes_home: Path) -> RigConfig:
 
     if not rig_section:
         cumulative = load_cumulative_hours(hermes_home)
-        return RigConfig(cumulative_inference_hours=cumulative)
+        # No local_rig config: keep backward compatibility — no auto-prompt
+        return RigConfig(cumulative_inference_hours=cumulative, auto_submit=False)
 
     # Primary profile from top-level keys
     primary = _dict_to_profile(rig_section, label=rig_section.get("label", "default"))
@@ -255,10 +257,15 @@ def load_rig_config(hermes_home: Path) -> RigConfig:
             active = rp
             break
 
-    cumulative = load_cumulative_hours(hermes_home)
+    cumulative = load_cumulative_inference_hours(hermes_home)
+
+    # Read auto_submit flag (default false for backward compatibility — manual)
+    auto_submit_raw = rig_section.get("auto_submit", False)
+    auto_submit = bool(auto_submit_raw) if isinstance(auto_submit_raw, bool) else bool(auto_submit_raw)
 
     return RigConfig(
         active=active,
         rigs=alt_rigs,
         cumulative_inference_hours=cumulative,
+        auto_submit=auto_submit,
     )

@@ -31,6 +31,7 @@ local_rig:
   gpu_only_cost_usd: 2500        # Optional: GPU cost as depreciation base
   avg_power_watts: 450           # Average power draw during inference (W)
   electricity_rate_per_kwh: 0.15 # Your local electricity rate ($/kWh)
+  auto_submit: false            # When true, auto-submit benchmarks to leaderboard (requires gh auth). Default: false.
 ```
 
 **Don't know your electricity rate?** Use auto-lookup:
@@ -46,6 +47,9 @@ local_rig:
 
 ```bash
 # Benchmark your local model (do this first!)
+# After a successful benchmark:
+#   - If auto_submit: true and gh auth OK → submits automatically
+#   - Otherwise → run /rig-submit manually to share
 /rig-benchmark qwen3.5-9b
 
 # See your rig economics
@@ -57,7 +61,7 @@ local_rig:
 # Look up electricity rates by region
 /rig-rates Texas
 
-# Submit your benchmark to the community leaderboard
+# Submit your benchmark to the community leaderboard (manual, or set auto_submit: true)
 /rig-submit qwen3.5-9b
 ```
 
@@ -78,6 +82,9 @@ Or use the LLM tools directly:
 
 ### `/rig-submit` — Share with the community
 ![rig-submit](rig-submit.png)
+
+### Auto-submit after benchmark (when enabled)
+![rig-benchmark-prompt](rig-benchmark-prompt.png)
 
 ## Cost Model
 

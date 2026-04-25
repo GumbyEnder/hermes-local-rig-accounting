@@ -20,6 +20,7 @@ _session_tokens_in: int = 0
 _session_tokens_out: int = 0
 _session_start_time: float = 0.0
 _session_api_calls: int = 0
+_skip_submit_prompt: bool = False
 _hermes_home: Optional[Path] = None
 
 
@@ -37,11 +38,12 @@ def _is_local_provider(provider: str = "", base_url: str = "") -> bool:
 
 def init_session(hermes_home: Path) -> None:
     """Reset session accumulators. Called from on_session_start hook."""
-    global _session_tokens_in, _session_tokens_out, _session_start_time, _session_api_calls, _hermes_home
+    global _session_tokens_in, _session_tokens_out, _session_start_time, _session_api_calls, _hermes_home, _skip_submit_prompt
     _session_tokens_in = 0
     _session_tokens_out = 0
     _session_start_time = time.monotonic()
     _session_api_calls = 0
+    _skip_submit_prompt = False
     _hermes_home = hermes_home
 
 

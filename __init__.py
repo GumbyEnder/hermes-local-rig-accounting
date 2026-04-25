@@ -12,6 +12,7 @@ Config (in config.yaml):
     avg_power_watts: 450
     electricity_rate_per_kwh: 0.15
     hostname: my-server             # optional auto-detect
+    auto_submit_prompt: true        # prompt to submit after /rig-benchmark (default true)
 
 Slash commands:
   /rig-cost       — Show current session's local cost estimate
@@ -22,6 +23,8 @@ Tools:
   rig_cost        — Estimate cost for a given model + token count
   rig_summary     — Get rig economics summary
   rig_benchmark   — Benchmark a local model's TPS
+  rig_submit      — Submit benchmark to community leaderboard
+  rig_rates       — Look up regional electricity rates
 """
 from __future__ import annotations
 
@@ -268,6 +271,37 @@ def _slash_rig_benchmark(raw_args: str) -> str:
         lines.append(f"   ─────────────────────────────────")
         lines.append(f"   Estimated cost: ${float(cost_result.input_cost_per_million):.4f}/M tokens")
         lines.append(f"   Hourly cost: ${cost_result.hourly_cost_usd:.4f}/hr")
+
+    # --- Auto-submit or suggestion (non-blocking) ---
+    rig_config = load_rig_config(_hermes_home())
+    if rig_config.auto_submit:
+        # Auto-submit mode: submit silently (user opted-in via config)
+        lines.append("")
+        lines.append("🔗 auto_submit enabled — submitting to community leaderboard…")
+        gh_ok = False
+        try:
+            check = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True, timeout=10)
+            gh_ok = (check.returncode == 0)
+        except Exception:
+            gh_ok = False
+
+        if not gh_ok:
+            lines.append("⚠️  GitHub not authenticated. Run: gh auth login")
+            lines.append("   Then re-run /rig-benchmark or set auto_submit: false to suppress this message.")
+        else:
+            submission_res_str = _handle_rig_submit({"model": model, "dry_run": False})
+            try:
+                submission_res = json.loads(submission_res_str)
+                if submission_res.get("status") == "submitted":
+                    lines.append(f"✅ Submitted! {submission_res.get('issue_url')}")
+                else:
+                    lines.append(f"❌ Submission error: {submission_res.get('error', 'unknown')}")
+            except Exception:
+                lines.append(f"❌ Submission error: {submission_res_str}")
+    else:
+        # Manual suggestion: show /rig-submit command with pre-filled model
+        lines.append("")
+        lines.append("💡 Share this benchmark: run →  /rig-submit model=" + model)
 
     return "\n".join(lines)
 

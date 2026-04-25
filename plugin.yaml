@@ -13,3 +13,12 @@ provides_hooks:
   - post_api_request
   - on_session_finalize
   - on_session_start
+config_schema:
+  local_rig:
+    type: object
+    properties:
+      auto_submit:
+        type: boolean
+        default: false
+        description: "When true, automatically submit benchmark results to the community leaderboard after a successful run (requires gh CLI auth). Default: false — manual submission via /rig-submit."
+    additionalProperties: true
