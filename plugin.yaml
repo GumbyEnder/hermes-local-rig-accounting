@@ -1,6 +1,6 @@
 name: local-rig-accounting
-version: 0.3.0
-description: "Transparent per-token cost accounting for local LLM inference — depreciation, energy, throughput-based pricing displayed alongside cloud provider costs. Regional electricity rate lookup. Community leaderboard submissions via GitHub Issues."
+version: "0.4.0"
+description: "Transparent per-token cost accounting for local LLM inference — depreciation, energy, throughput-based pricing displayed alongside cloud provider costs. Regional electricity rate lookup. Community leaderboard submissions via anonymous Cloudflare Worker (no GitHub auth required)."
 author: GumbyEnder
 kind: standalone
 provides_tools:
@@ -14,11 +14,20 @@ provides_hooks:
   - on_session_finalize
   - on_session_start
 config_schema:
-  local_rig:
+    local_rig:
     type: object
     properties:
       auto_submit:
         type: boolean
         default: true
-        description: "When true, automatically submit benchmark results to the community leaderboard after a successful run (requires gh CLI auth). Default: true — auto-submits when gh auth is valid; set false to disable."
+        description: "When true, automatically submit benchmark results to the community leaderboard after a successful run. Default: true."
+      submit_target:
+        type: string
+        enum: ["cloudflare", "github"]
+        default: "cloudflare"
+        description: "Where to submit benchmarks: 'cloudflare' (anonymous Worker) or 'github' (GitHub Issues)."
+      worker_url:
+        type: string
+        default: "https://benchmark-worker.agentic-accounting.workers.dev"
+        description: "Cloudflare Worker endpoint for anonymous submissions (used when submit_target=cloudflare)."
     additionalProperties: true

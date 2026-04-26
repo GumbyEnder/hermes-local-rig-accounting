@@ -5,6 +5,10 @@ Reads rig profile from config.yaml under the `local_rig:` key.
 Falls back to sensible defaults if no config is provided.
 Supports multiple named rig profiles.
 Supports auto-lookup of electricity rates by region.
+
+New fields (v0.4.0):
+- submit_target: "cloudflare" (Worker) or "github" (Issues)
+- worker_url: Custom Worker endpoint URL (overrides default)
 """
 from __future__ import annotations
 
@@ -88,6 +92,10 @@ _DEFAULT_RIG = {
     "electricity_rate_per_kwh": 0.0,
     "hostname": None,           # None = match any host
     "label": "default",
+    "auto_submit": True,
+    "submit_target": "cloudflare",
+    "worker_url": None,
+    "leaderboard_url": None,
 }
 
 
@@ -144,6 +152,9 @@ class RigConfig:
     rigs: List[RigProfile] = field(default_factory=list)
     cumulative_inference_hours: float = 0.0
     auto_submit: bool = True
+    leaderboard_url: Optional[str] = None
+    submit_target: str = "cloudflare"
+    worker_url: Optional[str] = None
 
     @property
     def all_rigs(self) -> List[RigProfile]:
@@ -226,6 +237,10 @@ def load_rig_config(hermes_home: Path) -> RigConfig:
         avg_power_watts: 450
         electricity_rate_per_kwh: 0.15
         hostname: my-server          # optional, auto-match by hostname
+        auto_submit: true            # auto-submit after /rig-benchmark (default true)
+        submit_target: cloudflare    # 'cloudflare' (Worker) or 'github' (Issues)
+        worker_url: https://benchmark-worker.agentic-accounting.workers.dev  # optional override
+        leaderboard_url: https://rig-leaderboard.agentic-accounting.workers.dev  # optional (legacy)
         rigs:                        # optional, for multi-rig setups
           - label: rtx4080
             hardware_cost_usd: 3000
@@ -259,7 +274,7 @@ def load_rig_config(hermes_home: Path) -> RigConfig:
 
     cumulative = load_cumulative_hours(hermes_home)
 
-    # Read auto_submit flag (default false for backward compatibility — manual)
+    # Read auto_submit flag (default true — auto-submit after benchmark)
     auto_submit_raw = rig_section.get("auto_submit", True)
     auto_submit = bool(auto_submit_raw) if isinstance(auto_submit_raw, bool) else bool(auto_submit_raw)
 
@@ -268,4 +283,7 @@ def load_rig_config(hermes_home: Path) -> RigConfig:
         rigs=alt_rigs,
         cumulative_inference_hours=cumulative,
         auto_submit=auto_submit,
+        leaderboard_url=rig_section.get("leaderboard_url"),
+        submit_target=rig_section.get("submit_target", "cloudflare"),
+        worker_url=rig_section.get("worker_url"),
     )

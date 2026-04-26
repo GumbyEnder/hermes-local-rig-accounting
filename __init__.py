@@ -12,7 +12,9 @@ Config (in config.yaml):
     avg_power_watts: 450
     electricity_rate_per_kwh: 0.15
     hostname: my-server             # optional auto-detect
-    auto_submit_prompt: true        # prompt to submit after /rig-benchmark (default true)
+    auto_submit: true               # auto-submit after /rig-benchmark (default true)
+    submit_target: cloudflare       # 'cloudflare' (Worker) or 'github' (Issues)
+    worker_url: https://benchmark-worker.agentic-accounting.workers.dev  # optional override
 
 Slash commands:
   /rig-cost       — Show current session's local cost estimate
@@ -61,6 +63,41 @@ def _tool_result(data: Any) -> str:
 
 def _tool_error(msg: str) -> str:
     return json.dumps({"error": msg})
+
+
+def _format_hardware_string(hardware: dict) -> str:
+    """Format hardware dict into a concise string for leaderboard display."""
+    gpus = hardware.get("gpu", [])
+    if gpus:
+        gpu = gpus[0]
+        model = gpu.get("model", "unknown")
+        vram = gpu.get("vram_mb", 0)
+        return f"{model} ({vram} MB)" if vram else model
+    cpu = hardware.get("cpu", {})
+    if cpu:
+        return cpu.get("model", "unknown CPU")
+    return "unknown"
+
+
+def _spinner(message: str, total_steps: int = 0):
+    """Live progress indicator for long-running benchmark."""
+    frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    idx = 0
+    start = time.time()
+    def render(step: int = 0) -> str:
+        nonlocal idx
+        frame = frames[idx % len(frames)]
+        idx += 1
+        elapsed = time.time() - start
+        if total_steps > 0:
+            pct = int((step / total_steps) * 100)
+            return f"\r{frame} {message} — {step}/{total_steps} ({pct}%) — {elapsed:.1f}s"
+        return f"\r{frame} {message} — {elapsed:.1f}s"
+    def update(step: int) -> str:
+        return render(step)
+    def complete(final_msg: str = "") -> str:
+        return f"\r✅ {final_msg or message}"
+    return render, update, complete
 
 
 def _is_local_model(model: str = "", provider: str = "", base_url: str = "") -> bool:
@@ -135,13 +172,40 @@ def _handle_rig_benchmark(args: dict, **kwargs) -> str:
     if not model:
         return _tool_error("model parameter required (e.g. 'qwen3.5-9b' or 'lmstudio-local/qwen3.5-9b')")
 
-    result = run_benchmark(
-        _hermes_home(),
-        model=model,
-        base_url=base_url,
-        api_key=api_key,
-        max_tokens=max_tokens,
-    )
+    # Spinner thread
+    import threading, sys, time
+    stop_spinner = False
+
+    def spin():
+        frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        idx = 0
+        start = time.time()
+        while not stop_spinner:
+            frame = frames[idx % len(frames)]
+            elapsed = time.time() - start
+            msg = f"\r{frame} Benchmarking '{model}'... — {elapsed:.1f}s"
+            sys.stderr.write(msg)
+            sys.stderr.flush()
+            idx += 1
+            time.sleep(0.1)
+        sys.stderr.write(f"\r✅ Benchmark complete — {time.time()-start:.1f}s        \n")
+        sys.stderr.flush()
+
+    t = threading.Thread(target=spin, daemon=True)
+    t.start()
+
+    try:
+        result = run_benchmark(
+            _hermes_home(),
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            max_tokens=max_tokens,
+        )
+    finally:
+        stop_spinner = True
+        t.join(timeout=1.0)
+
     return _tool_result(result)
 
 
@@ -275,29 +339,32 @@ def _slash_rig_benchmark(raw_args: str) -> str:
     # --- Auto-submit or suggestion (non-blocking) ---
     rig_config = load_rig_config(_hermes_home())
     if rig_config.auto_submit:
-        # Auto-submit mode: submit silently (user opted-in via config)
+        # Auto-submit mode: delegate to _handle_rig_submit which respects submit_target
         lines.append("")
         lines.append("🔗 auto_submit enabled — submitting to community leaderboard…")
-        gh_ok = False
+        submission_res_str = _handle_rig_submit({"model": model, "dry_run": False})
         try:
-            check = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True, timeout=10)
-            gh_ok = (check.returncode == 0)
-        except Exception:
-            gh_ok = False
-
-        if not gh_ok:
-            lines.append("⚠️  GitHub not authenticated. Run: gh auth login")
-            lines.append("   Then re-run /rig-benchmark or set auto_submit: false to suppress this message.")
-        else:
-            submission_res_str = _handle_rig_submit({"model": model, "dry_run": False})
-            try:
-                submission_res = json.loads(submission_res_str)
-                if submission_res.get("status") == "submitted":
+            submission_res = json.loads(submission_res_str)
+            if submission_res.get("status") == "submitted":
+                target = submission_res.get("target", "unknown")
+                if target == "cloudflare":
+                    # Cloudflare Worker: show concise confirmation
+                    msg = submission_res.get("message", "Benchmark submitted to cloud leaderboard")
+                    lines.append(f"✅ {msg}")
+                elif target == "github":
                     lines.append(f"✅ Submitted! {submission_res.get('issue_url')}")
                 else:
-                    lines.append(f"❌ Submission error: {submission_res.get('error', 'unknown')}")
-            except Exception:
-                lines.append(f"❌ Submission error: {submission_res_str}")
+                    lines.append(f"✅ Submitted ({target})")
+            else:
+                err = submission_res.get("error", "unknown")
+                # Provide targeted guidance based on error
+                if "gh CLI not found" in err or "not authenticated" in err.lower():
+                    lines.append(f"⚠️  GitHub submission needed: {err}")
+                    lines.append("   Either: install/login gh CLI, or set submit_target: cloudflare")
+                else:
+                    lines.append(f"❌ Submission failed: {err}")
+        except Exception:
+            lines.append(f"❌ Submission error: {submission_res_str}")
     else:
         # Manual suggestion: show /rig-submit command with pre-filled model
         lines.append("")
@@ -386,7 +453,7 @@ def _build_submission_payload(hermes_home: Path, model: str = "") -> Optional[Di
 
 
 def _handle_rig_submit(args: dict, **kwargs) -> str:
-    """Submit benchmark results to the community leaderboard."""
+    """Submit benchmark results to the community leaderboard (Cloudflare Worker or GitHub fallback)."""
     model = args.get("model", "")
     dry_run = args.get("dry_run", False)
 
@@ -402,11 +469,65 @@ def _handle_rig_submit(args: dict, **kwargs) -> str:
             "payload": submission,
         })
 
-    # Create GitHub issue via gh CLI
-    try:
-        import subprocess
-        import json as _json
+    # Load config for submission target
+    from .rig_config import load_rig_config
+    rig_config = load_rig_config(_hermes_home())
+    submit_target = getattr(rig_config, "submit_target", "cloudflare")
+    worker_url = getattr(rig_config, "worker_url", None) or "https://benchmark-worker.agentic-accounting.workers.dev"
+    profile = rig_config.active
 
+    # Build Worker payload (includes metadata)
+    worker_payload = {
+        "submission": submission,
+        "metadata": {
+            "rig_config": {
+                "hardware_cost_usd": profile.hardware_cost_usd,
+                "gpu_only_cost_usd": profile.gpu_only_cost_usd,
+                "lifespan_years": profile.lifespan_years,
+                "avg_power_watts": profile.avg_power_watts,
+                "electricity_rate_per_kwh": profile.electricity_rate_per_kwh,
+            },
+            "hermes_version": "0.4.0",
+            "submission_version": "2.0"
+        }
+    }
+
+    import urllib.request
+    import json as _json
+
+    if submit_target == "cloudflare":
+        try:
+            payload_bytes = _json.dumps(worker_payload).encode("utf-8")
+            req = urllib.request.Request(
+                f"{worker_url}/api/benchmarks",
+                data=payload_bytes,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if resp.status in (200, 201):
+                    result = _json.loads(resp.read().decode("utf-8"))
+                    return _tool_result({
+                        "status": "submitted",
+                        "target": "cloudflare",
+                        "worker_id": result.get("id"),
+                        "message": result.get("message", "Benchmark submitted"),
+                        "model": submission["benchmark"]["model"],
+                        "tps": submission["benchmark"]["avg_tps"],
+                    })
+                else:
+                    error_body = resp.read().decode("utf-8")
+                    raise Exception(f"Worker returned {resp.status}: {error_body}")
+        except Exception as e:
+            # Fallback to GitHub if configured
+            if submit_target == "cloudflare":
+                # Try GitHub as fallback
+                submit_target = "github"
+            else:
+                raise
+
+    if submit_target == "github":
+        # Legacy GitHub Issues fallback
         title = f"📊 Benchmark: {submission['benchmark']['model']} @ {submission['benchmark']['avg_tps']:.1f} TPS on {submission['hardware'].get('gpu', [{}])[0].get('model', 'unknown GPU')}"
         body = f"""### Benchmark Submission
 
@@ -418,32 +539,33 @@ def _handle_rig_submit(args: dict, **kwargs) -> str:
 
 **Auto-submitted via `/rig-submit`** | [Local Rig Accounting Plugin](https://github.com/GumbyEnder/hermes-local-rig-accounting)
 """
+        try:
+            result = subprocess.run(
+                ["gh", "issue", "create",
+                 "--repo", "GumbyEnder/hermes-local-rig-accounting",
+                 "--title", title,
+                 "--body", body,
+                 "--label", "benchmark"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0:
+                issue_url = result.stdout.strip()
+                return _tool_result({
+                    "status": "submitted",
+                    "target": "github",
+                    "issue_url": issue_url,
+                    "model": submission["benchmark"]["model"],
+                    "tps": submission["benchmark"]["avg_tps"],
+                    "gpu": submission["hardware"].get("gpu", [{}])[0].get("model", "unknown"),
+                })
+            else:
+                return _tool_error(f"GitHub issue creation failed: {result.stderr.strip()}")
+        except FileNotFoundError:
+            return _tool_error("gh CLI not found. Install: https://cli.github.com/")
+        except Exception as e:
+            return _tool_error(f"GitHub submission failed: {e}")
 
-        result = subprocess.run(
-            ["gh", "issue", "create",
-             "--repo", "GumbyEnder/hermes-local-rig-accounting",
-             "--title", title,
-             "--body", body,
-             "--label", "benchmark"],
-            capture_output=True, text=True, timeout=30,
-        )
-
-        if result.returncode == 0:
-            issue_url = result.stdout.strip()
-            return _tool_result({
-                "status": "submitted",
-                "issue_url": issue_url,
-                "model": submission["benchmark"]["model"],
-                "tps": submission["benchmark"]["avg_tps"],
-                "gpu": submission["hardware"].get("gpu", [{}])[0].get("model", "unknown"),
-            })
-        else:
-            return _tool_error(f"GitHub issue creation failed: {result.stderr.strip()}")
-
-    except FileNotFoundError:
-        return _tool_error("gh CLI not found. Install: https://cli.github.com/")
-    except Exception as e:
-        return _tool_error(f"Submission failed: {e}")
+    return _tool_error("No submission target configured")
 
 
 def _slash_rig_submit(raw_args: str) -> str:
