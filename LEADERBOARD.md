@@ -8,7 +8,7 @@ Real-world cost-per-token benchmarks from the local LLM community. All data self
 
 ## Leaderboard
 
-*Sorted by cost per million tokens (lowest first). Last rebuilt: April 2026.*
+*Sorted by cost per million tokens (lowest first). Last rebuilt: May 2026.*
 
 | # | GPU | CPU | RAM | Model | TPS | $/M tokens | Submitted |
 |---|-----|-----|-----|-------|-----|-----------|-----------|
