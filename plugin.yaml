@@ -13,21 +13,18 @@ provides_hooks:
   - post_api_request
   - on_session_finalize
   - on_session_start
+# Settings are read from the top-level `local_rig:` section of config.yaml (see rig_config.py).
 config_schema:
-    local_rig:
-    type: object
-    properties:
-      auto_submit:
-        type: boolean
-        default: true
-        description: "When true, automatically submit benchmark results to the community leaderboard after a successful run. Default: true."
-      submit_target:
-        type: string
-        enum: ["cloudflare", "github"]
-        default: "cloudflare"
-        description: "Where to submit benchmarks: 'cloudflare' (anonymous Worker) or 'github' (GitHub Issues)."
-      worker_url:
-        type: string
-        default: "https://benchmark-worker.agentic-accounting.workers.dev"
-        description: "Cloudflare Worker endpoint for anonymous submissions (used when submit_target=cloudflare)."
-    additionalProperties: true
+  auto_submit:
+    type: boolean
+    default: true
+    description: "When true, automatically submit benchmark results to the community leaderboard after a successful run. Default: true."
+  submit_target:
+    type: string
+    enum: ["cloudflare", "github"]
+    default: "cloudflare"
+    description: "Where to submit benchmarks: 'cloudflare' (anonymous Worker) or 'github' (GitHub Issues)."
+  worker_url:
+    type: string
+    default: "https://benchmark-worker.agentic-accounting.workers.dev"
+    description: "Cloudflare Worker endpoint for anonymous submissions (used when submit_target=cloudflare)."
